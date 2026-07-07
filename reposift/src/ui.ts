@@ -4,6 +4,7 @@ import { initCommand } from "./init.js";
 import { inspectCommand } from "./inspect.js";
 import { filterCommand } from "./filter.js";
 import { prepareCommand } from "./prepare.js";
+import { exportCommand } from "./export.js";
 
 export async function uiCommand(): Promise<void> {
   console.log(`\n${picocolors.bold(picocolors.cyan("RepoSift"))} ${picocolors.dim("— Interactive Menu")}`);
@@ -18,6 +19,7 @@ export async function uiCommand(): Promise<void> {
         { value: "inspect", label: "🔍 Inspect", hint: "Analyze a dataset folder or .zip" },
         { value: "filter", label: "🎯 Filter", hint: "Remove generated/vendor files from a dataset" },
         { value: "prepare", label: "🧠 Prepare", hint: "Generate training examples for agent training" },
+        { value: "export", label: "📦 Export", hint: "Export to standardized dataset format" },
         { value: "exit", label: "🚪 Exit", hint: "Close RepoSift" },
       ],
     });
@@ -47,6 +49,10 @@ export async function uiCommand(): Promise<void> {
 
       case "prepare":
         await doPrepare();
+        break;
+
+      case "export":
+        await doExport();
         break;
     }
 
@@ -238,6 +244,56 @@ async function doPrepare(): Promise<void> {
     mode: validatedMode,
     maxExamples: maxExamples !== undefined && !isNaN(maxExamples) ? maxExamples : undefined,
     maxFileSizeKB,
+    verbose: verbose as boolean,
+  });
+}
+
+async function doExport(): Promise<void> {
+  console.log(`\n${picocolors.cyan("📦 Export — Convert to standardized dataset format")}\n`);
+
+  const inputPath = await p.text({
+    message: "Path to prepare output (folder with training.jsonl)",
+    validate: (v) => {
+      if (!v || v.trim().length === 0) return "Path is required";
+    },
+  });
+  if (p.isCancel(inputPath)) return;
+
+  const outputDir = await p.text({
+    message: "Output directory for the exported dataset",
+    validate: (v) => {
+      if (!v || v.trim().length === 0) return "Output directory is required";
+    },
+  });
+  if (p.isCancel(outputDir)) return;
+
+  const format = await p.select({
+    message: "Output format",
+    options: [
+      { value: "instruction", label: "Instruction", hint: '{ "instruction": "...", "input": "...", "output": "..." }' },
+      { value: "messages", label: "Messages", hint: "Chat format compatible with OpenAI, Hugging Face" },
+    ],
+    initialValue: "instruction",
+  });
+  if (p.isCancel(format)) return;
+
+  const datasetName = await p.text({
+    message: "Dataset name (for metadata)",
+    placeholder: "reposift-dataset",
+    defaultValue: "reposift-dataset",
+  });
+  if (p.isCancel(datasetName)) return;
+
+  const verbose = await p.confirm({
+    message: "Enable verbose output?",
+    initialValue: false,
+  });
+  if (p.isCancel(verbose)) return;
+
+  await exportCommand(inputPath as string, {
+    output: outputDir as string,
+    format: (format as string) as "instruction" | "messages",
+    name: datasetName as string,
     verbose: verbose as boolean,
   });
 }

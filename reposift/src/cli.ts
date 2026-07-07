@@ -33,6 +33,7 @@ import { initCommand } from "./init.js";
 import { inspectCommand } from "./inspect.js";
 import { filterCommand } from "./filter.js";
 import { prepareCommand } from "./prepare.js";
+import { exportCommand } from "./export.js";
 import { uiCommand } from "./ui.js";
 import cliProgress from "cli-progress";
 import picocolors from "picocolors";
@@ -64,7 +65,15 @@ const program = new Command();
 program
   .name("reposift")
   .description("Scrape GitHub repos for AI training data — filtered, deduped, and packaged")
-  .version("0.1.0");
+  .version(process.env.npm_package_version || "0.1.0");
+
+program
+  .command("about")
+  .description("Show information about the tool and its dependencies")
+  .action(async () => {
+    console.log(`${picocolors.bold(process.env.npm_package_name || "RepoSift")} v${process.env.npm_package_version || "0.1.0"}`);
+    console.log(`Node.js: ${process.version}`);
+  });
 
 program
   .command("ui")
@@ -119,6 +128,29 @@ program
       mode,
       maxExamples: opts.maxExamples,
       maxFileSizeKB: opts.maxFileSizeKB ?? 50,
+      verbose: opts.verbose,
+    });
+  });
+
+program
+  .command("export")
+  .description("Export training examples to a standardized dataset format for downstream training")
+  .argument("<input-path>", "path to prepare output (training.jsonl + examples_summary.json)")
+  .requiredOption("-o, --output <dir>", "output directory for the exported dataset")
+  .option("-f, --format <format>", "output format: instruction | messages (default: instruction)")
+  .option("--name <name>", "dataset name for metadata (default: reposift-dataset)")
+  .option("-v, --verbose", "verbose debug output")
+  .action(async (inputPath: string, opts: { output: string; format?: string; name?: string; verbose?: boolean }) => {
+    const format = (opts.format ?? "instruction") as "instruction" | "messages";
+    if (!["instruction", "messages"].includes(format)) {
+      console.error(`Invalid format "${format}". Use instruction or messages.`);
+      process.exitCode = 1;
+      return;
+    }
+    await exportCommand(inputPath, {
+      output: opts.output,
+      format,
+      name: opts.name,
       verbose: opts.verbose,
     });
   });
