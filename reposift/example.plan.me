@@ -1,0 +1,84 @@
+name: typescript-training
+maxSizeGB: 10
+
+discovery:
+  search:
+    query: "language:TypeScript stars:>1000"
+    limit: 50
+  users:
+    - sindresorhus
+    - tj
+  explicitRepos:
+    - "facebook/react"
+    - "vercel/next.js"
+
+licenses:
+  allow:
+    - MIT
+    - Apache-2.0
+    - BSD-3-Clause
+    - ISC
+    - Unlicense
+  requireDetected: true
+
+stars:
+  min: 50
+
+languages:
+  allow:
+    - TypeScript
+    - JavaScript
+
+exclude:
+  paths:
+    - node_modules
+    - vendor
+    - dist
+    - build
+    - coverage
+    - "*.min.js"
+    - "*.lock"
+    - test
+    - tests
+    - __tests__
+    - __snapshots__
+    - fixture
+    - fixtures
+  extensions:
+    - .png
+    - .jpg
+    - .jpeg
+    - .gif
+    - .svg
+    - .ico
+    - .woff
+    - .woff2
+    - .ttf
+    - .eot
+    - .zip
+    - .gz
+    - .tar
+    - .exe
+    - .bin
+    - .pdf
+    - .mp4
+    - .webm
+    - .wav
+    - .mp3
+    - .ico
+  maxFileSizeKB: 500
+
+dedupe:
+  enabled: true
+
+secretScan:
+  enabled: true
+  action: drop          # drop | redact
+
+output:
+  format: raw+jsonl
+
+auth:
+  tokenEnv: GITHUB_TOKEN
+
+concurrency: 5

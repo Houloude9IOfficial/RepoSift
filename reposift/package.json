@@ -1,0 +1,57 @@
+{
+  "name": "reposift",
+  "version": "0.1.0",
+  "description": "Scrape GitHub repos for AI training data — filtered, deduped, and packaged",
+  "type": "module",
+  "bin": {
+    "reposift": "./bin/reposift"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "github",
+    "scraper",
+    "ai",
+    "training-data",
+    "dataset",
+    "cli"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@clack/prompts": "^1.7.0",
+    "adm-zip": "^0.5.18",
+    "archiver": "^7.0.1",
+    "cli-progress": "^3.12.0",
+    "commander": "^13.1.0",
+    "js-yaml": "^4.1.0",
+    "minimatch": "^10.2.5",
+    "p-limit": "^6.2.0",
+    "picocolors": "^1.1.1",
+    "tar": "^7.5.19",
+    "undici": "^7.6.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
+    "@types/archiver": "^6.0.3",
+    "@types/cli-progress": "^3.11.6",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.13.14",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1"
+  }
+}
