@@ -1,0 +1,246 @@
+name: typescript-debugging-training
+
+description: >
+  High-quality TypeScript debugging dataset.
+  Collects permissively licensed repositories, commits, pull requests,
+  and source files to create bug-fix examples for small coding models.
+
+maxSizeGB: 5
+
+discovery:
+  search:
+    query: "language:TypeScript stars:>500"
+    limit: 200
+
+  users:
+    - sindresorhus
+    - tj
+    - microsoft
+    - vercel
+    - facebook
+    - typescript-eslint
+
+  explicitRepos:
+    - facebook/react
+    - vercel/next.js
+    - microsoft/TypeScript
+    - microsoft/vscode
+    - typescript-eslint/typescript-eslint
+
+licenses:
+  allow:
+    - MIT
+    - Apache-2.0
+    - BSD-3-Clause
+    - ISC
+    - Unlicense
+
+  requireDetected: true
+
+stars:
+  min: 50
+
+languages:
+  allow:
+    - TypeScript
+    - JavaScript
+
+include:
+  extensions:
+    - .ts
+    - .tsx
+    - .js
+    - .jsx
+    - .json
+    - .md
+
+  files:
+    - package.json
+    - tsconfig.json
+    - vite.config.ts
+    - webpack.config.ts
+    - next.config.js
+
+exclude:
+  paths:
+    - node_modules
+    - vendor
+    - dist
+    - build
+    - coverage
+    - "*.min.js"
+    - "*.lock"
+    - test
+    - tests
+    - __tests__
+    - __snapshots__
+    - fixtures
+    - fixture
+    - examples
+    - demo
+
+  extensions:
+    - .png
+    - .jpg
+    - .jpeg
+    - .gif
+    - .svg
+    - .ico
+    - .woff
+    - .woff2
+    - .ttf
+    - .eot
+    - .zip
+    - .gz
+    - .tar
+    - .exe
+    - .bin
+    - .pdf
+    - .mp4
+    - .webm
+    - .wav
+    - .mp3
+
+  maxFileSizeKB: 500
+
+
+collection:
+
+  commits:
+    enabled: true
+
+    requireMessagePatterns:
+      - fix
+      - bug
+      - crash
+      - error
+      - issue
+      - resolve
+      - patch
+      - broken
+
+    extractDiffs: true
+
+
+  pullRequests:
+    enabled: true
+
+    collect:
+      - title
+      - description
+      - changedFiles
+      - patches
+      - comments
+
+
+  issues:
+    enabled: true
+
+    collect:
+      - title
+      - body
+      - labels
+
+
+dataset:
+
+  format: raw+jsonl
+
+  schema:
+
+    type: debugging_example
+
+    fields:
+
+      repository:
+        type: string
+
+      language:
+        type: string
+
+      issue:
+        type: string
+
+      error:
+        type: string
+
+      before:
+        type: code
+
+      after:
+        type: code
+
+      diff:
+        type: code
+
+      commitMessage:
+        type: string
+
+
+quality:
+
+  minimumStars: 50
+
+  require:
+    - detectedLicense
+    - validRepository
+
+  prefer:
+    - activeMaintenance
+    - recentCommits
+    - typescriptUsage
+
+
+dedupe:
+
+  enabled: true
+
+  strategy:
+    - exact
+    - similarity
+
+
+secretScan:
+
+  enabled: true
+
+  action: drop
+
+
+security:
+
+  remove:
+    - tokens
+    - passwords
+    - apiKeys
+    - privateKeys
+
+
+output:
+  format: raw+jsonl
+
+
+auth:
+
+  tokenEnv: GITHUB_TOKEN
+
+
+performance:
+
+  concurrency: 5
+
+  cache:
+    enabled: true
+
+    directory: .cache/github
+
+
+hardware:
+
+  target:
+    device: Apple Silicon Mac
+
+  optimize:
+    - streaming
+    - incrementalProcessing
+    - lowMemoryMode
