@@ -44,7 +44,7 @@ export async function searchRepos(
       method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
-        "User-Agent": "reposift/0.1.0",
+        "User-Agent": "reposift/1.0.0",
         Accept: "application/vnd.github+json",
       },
       signal,

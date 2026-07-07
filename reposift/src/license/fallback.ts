@@ -42,7 +42,7 @@ export async function fallbackDetectLicense(
       const resp = await request(url, {
         method: "GET",
         headers: {
-          "User-Agent": "reposift/0.1.0",
+          "User-Agent": "reposift/1.0.0",
         },
         headersTimeout: 15_000,
         bodyTimeout: 30_000,

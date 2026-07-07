@@ -333,7 +333,7 @@ output/export/
   "license": "mixed",
   "created": "2026-07-07",
   "generatedBy": "RepoSift",
-  "version": "0.1.0"
+  "version": "1.0.0"
 }
 ```
 

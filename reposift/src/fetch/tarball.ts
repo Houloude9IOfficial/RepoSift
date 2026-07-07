@@ -17,7 +17,7 @@ export async function downloadTarball(
   const resp = await request(url, {
     method: "GET",
     headers: {
-      "User-Agent": "reposift/0.1.0",
+      "User-Agent": "reposift/1.0.0",
     },
     signal,
     headersTimeout: 30_000,

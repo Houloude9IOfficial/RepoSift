@@ -65,13 +65,13 @@ const program = new Command();
 program
   .name("reposift")
   .description("Scrape GitHub repos for AI training data — filtered, deduped, and packaged")
-  .version(process.env.npm_package_version || "0.1.0");
+  .version(process.env.npm_package_version || "1.0.0");
 
 program
   .command("about")
   .description("Show information about the tool and its dependencies")
   .action(async () => {
-    console.log(`${picocolors.bold(process.env.npm_package_name || "RepoSift")} v${process.env.npm_package_version || "0.1.0"}`);
+    console.log(`${picocolors.bold(process.env.npm_package_name || "RepoSift")} v${process.env.npm_package_version || "1.0.0"}`);
     console.log(`Node.js: ${process.version}`);
   });
 

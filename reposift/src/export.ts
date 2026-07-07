@@ -365,7 +365,7 @@ export async function exportCommand(
     license: options.license ?? "other",
     created,
     generatedBy: process.env.npm_package_name || "RepoSift",
-    version: process.env.npm_package_version || "0.1.0",
+    version: process.env.npm_package_version || "1.0.0",
   };
 
   writeFileSync(
