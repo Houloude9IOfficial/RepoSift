@@ -1,10 +1,8 @@
 import {
   existsSync,
-  readFileSync,
   readdirSync,
   statSync,
   mkdirSync,
-  writeFileSync,
   copyFileSync,
   rmSync,
 } from "node:fs";
@@ -58,8 +56,12 @@ const DEFAULT_CONFIG: FilterConfig = {
   debugMode: false,
 };
 
+// Patterns removed only when NOT in debug mode
 const DEBUG_REMOVE_PATHS = ["test", "tests", "__tests__", "__snapshots__", "fixture", "fixtures", "spec", "specs"];
 const DEBUG_REMOVE_FILE_PATTERNS: string[] = [];
+
+// Doc extensions that get split out with --split-docs
+const DOC_EXTENSIONS = new Set([".md", ".mdx", ".rst", ".txt"]);
 
 // ── Helpers ──
 
@@ -69,7 +71,6 @@ function shouldRemove(
 ): { remove: boolean; reason?: string } {
   const normalized = relPath.replace(/\\/g, "/");
 
-  // Check path removal
   for (const pattern of config.removePaths) {
     if (
       normalized === pattern ||
@@ -80,11 +81,10 @@ function shouldRemove(
     }
   }
 
-  // Check file patterns
   const fileName = normalized.split("/").pop() ?? "";
   for (const filePattern of config.removeFilePatterns) {
     if (filePattern.startsWith("*.")) {
-      const suffix = filePattern.slice(1); // e.g., ".min.js"
+      const suffix = filePattern.slice(1);
       if (fileName.endsWith(suffix)) {
         return { remove: true, reason: `pattern: ${filePattern}` };
       }
@@ -93,7 +93,6 @@ function shouldRemove(
     }
   }
 
-  // Check debug mode — don't remove test/example/doc paths
   if (!config.debugMode) {
     for (const pattern of DEBUG_REMOVE_PATHS) {
       if (
@@ -116,6 +115,10 @@ function shouldRemove(
 
 function shouldKeepExtension(ext: string, config: FilterConfig): boolean {
   return config.keepExtensions.includes(ext.toLowerCase());
+}
+
+function isDocExtension(ext: string): boolean {
+  return DOC_EXTENSIONS.has(ext.toLowerCase());
 }
 
 function formatSize(bytes: number): string {
@@ -141,6 +144,7 @@ export interface FilterOptions {
   output: string;
   debug?: boolean;
   verbose?: boolean;
+  splitDocs?: boolean;
 }
 
 export async function filterCommand(
@@ -156,9 +160,11 @@ export async function filterCommand(
     debugMode: options.debug ?? false,
   };
 
+  const splitDocs = options.splitDocs ?? false;
+
   if (options.verbose) {
     console.log(
-      `${picocolors.dim("▸")} Mode: ${config.debugMode ? picocolors.magenta("debug") : picocolors.cyan("default")}`,
+      `${picocolors.dim("▸")} Mode: ${config.debugMode ? picocolors.magenta("debug") : picocolors.cyan("default")}${splitDocs ? `, ${picocolors.green("split-docs")}` : ""}`,
     );
     console.log(
       `${picocolors.dim("▸")} Keeping extensions: ${config.keepExtensions.join(", ")}`,
@@ -168,10 +174,14 @@ export async function filterCommand(
         `${picocolors.dim("▸")} Also keeping: test, examples, docs directories`,
       );
     }
+    if (splitDocs) {
+      console.log(
+        `${picocolors.dim("▸")} Separating docs into parallel docs/ directory`,
+      );
+    }
   }
 
   try {
-    // Validate input
     if (!existsSync(resolvedInput)) {
       console.error(
         `${picocolors.red("✘")} Input not found: "${resolvedInput}"`,
@@ -207,7 +217,6 @@ export async function filterCommand(
     if (existsSync(direct) && statSync(direct).isDirectory()) {
       dataDir = direct;
     } else {
-      // Check if the root itself has repo__ subdirectories
       const entries = readdirSync(workingDir);
       if (entries.some((e) => e.includes("__"))) {
         dataDir = workingDir;
@@ -223,9 +232,11 @@ export async function filterCommand(
       return;
     }
 
-    // Prepare output
-    const outputDataDir = join(resolvedOutput, "data");
-    mkdirSync(outputDataDir, { recursive: true });
+    // Prepare output directories
+    const outputCodeDir = join(resolvedOutput, splitDocs ? "code" : "data");
+    const outputDocsDir = splitDocs ? join(resolvedOutput, "docs") : null;
+    mkdirSync(outputCodeDir, { recursive: true });
+    if (outputDocsDir) mkdirSync(outputDocsDir, { recursive: true });
 
     // Walk and filter
     const repoDirs = readdirSync(dataDir).filter((entry) => {
@@ -233,26 +244,16 @@ export async function filterCommand(
       return statSync(fullPath).isDirectory();
     });
 
-    let totalKept = 0;
+    let codeKept = 0;
+    let docsKept = 0;
     let totalSkipped = 0;
     let skippedGenerated = 0;
     let skippedExtension = 0;
-    let totalBytesKept = 0;
+    let codeBytes = 0;
+    let docsBytes = 0;
     let repoCount = 0;
 
-    for (const repoDirName of repoDirs) {
-      // Skip if it doesn't look like a repo dir
-      if (!repoDirName.includes("__")) continue;
-
-      const repoSource = join(dataDir, repoDirName);
-      const repoDest = join(outputDataDir, repoDirName);
-      mkdirSync(repoDest, { recursive: true });
-      repoCount++;
-
-    let repoKept = 0;
-    let repoSkipped = 0;
-
-    // Hoisted helper to count files in a directory subtree
+    // Hoisted helper
     const countDir = (d: string): number => {
       let c = 0;
       try {
@@ -266,7 +267,21 @@ export async function filterCommand(
       return c;
     };
 
-    const walkDir = (dirPath: string): void => {
+    for (const repoDirName of repoDirs) {
+      if (!repoDirName.includes("__")) continue;
+
+      const repoSource = join(dataDir, repoDirName);
+      const repoCodeDest = join(outputCodeDir, repoDirName);
+      const repoDocsDest = outputDocsDir ? join(outputDocsDir, repoDirName) : null;
+
+      mkdirSync(repoCodeDest, { recursive: true });
+      if (repoDocsDest) mkdirSync(repoDocsDest, { recursive: true });
+
+      repoCount++;
+      let repoCode = 0;
+      let repoDocs = 0;
+
+      const walkDir = (dirPath: string): void => {
         const relToData = relative(dataDir, dirPath);
         let entries: string[];
         try {
@@ -285,7 +300,6 @@ export async function filterCommand(
           }
 
           if (fileStat.isDirectory()) {
-            // Check if directory should be entirely removed
             const dirRelPath = join(relToData, entry);
             const { remove } = shouldRemove(dirRelPath, config);
             if (remove) {
@@ -304,14 +318,12 @@ export async function filterCommand(
             const fileRelPath = join(relToData, entry);
             const ext = extname(entry).toLowerCase();
 
-            // Check extension
             if (!shouldKeepExtension(ext, config)) {
               skippedExtension++;
               totalSkipped++;
               continue;
             }
 
-            // Check path/file patterns
             const { remove, reason } = shouldRemove(fileRelPath, config);
             if (remove) {
               skippedGenerated++;
@@ -324,108 +336,109 @@ export async function filterCommand(
               continue;
             }
 
-            // Copy the file
-            const destPath = join(outputDataDir, fileRelPath);
-            const destDir = dirname(destPath);
-            mkdirSync(destDir, { recursive: true });
+            // Determine destination: code or docs
+            const isDoc = splitDocs && isDocExtension(ext);
+            const destBase = isDoc && outputDocsDir ? outputDocsDir : outputCodeDir;
+
+            const destPath = join(destBase, fileRelPath);
+            const destDirDir = dirname(destPath);
+            mkdirSync(destDirDir, { recursive: true });
             try {
               copyFileSync(fullPath, destPath);
             } catch {
               continue;
             }
 
-            totalKept++;
-            repoKept++;
-            totalBytesKept += fileStat.size;
+            if (isDoc) {
+              docsKept++;
+              repoDocs++;
+              docsBytes += fileStat.size;
+            } else {
+              codeKept++;
+              repoCode++;
+              codeBytes += fileStat.size;
+            }
           }
         }
       };
 
       walkDir(repoSource);
 
-      // Remove repo dir if nothing was kept
-      if (repoKept === 0) {
+      // Clean up empty repo dirs
+      if (repoCode === 0) {
         try {
-          rmSync(repoDest, { recursive: true, force: true });
+          rmSync(repoCodeDest, { recursive: true, force: true });
         } catch { /* best effort */ }
+      }
+      if (outputDocsDir && repoDocs === 0) {
+        try {
+          rmSync(join(outputDocsDir, repoDirName), { recursive: true, force: true });
+        } catch { /* best effort */ }
+      }
+      if (repoCode === 0 && repoDocs === 0) {
         repoCount--;
       }
     }
 
-    // Copy metadata files (manifest.json, stats.json, metadata.jsonl, plan.me)
-    const metadataFiles = [
-      "manifest.json",
-      "stats.json",
-      "metadata.jsonl",
-      "plan.me",
-    ];
-
+    // Copy metadata files
+    const metadataFiles = ["manifest.json", "stats.json", "metadata.jsonl", "plan.me"];
     let metadataCopied = 0;
     for (const file of metadataFiles) {
       const src = join(workingDir, file);
       if (existsSync(src)) {
         try {
-          // Copy — note: manifest.json and stats.json will have stale counts
           copyFileSync(src, join(resolvedOutput, file));
           metadataCopied++;
         } catch { /* best effort */ }
       }
     }
 
-    // Print summary
+    const totalKept = codeKept + docsKept;
     const pctKept = totalKept + totalSkipped > 0
       ? ((totalKept / (totalKept + totalSkipped)) * 100).toFixed(1)
       : "0.0";
 
+    // Print summary
+    const barLine = picocolors.dim("═".repeat(50));
+
     console.log(`\n${picocolors.bold(picocolors.cyan("Filter Complete"))}`);
-    console.log(picocolors.dim("═".repeat(50)));
-    console.log(
-      `  ${picocolors.bold("Input:")}    ${picocolors.dim(resolvedInput)}`,
-    );
-    console.log(
-      `  ${picocolors.bold("Output:")}   ${picocolors.white(resolvedOutput)}`,
-    );
-    console.log(
-      `  ${picocolors.bold("Repos:")}    ${picocolors.white(formatCount(repoCount))}`,
-    );
-    console.log(
-      `  ${picocolors.bold("Kept:")}     ${picocolors.green(formatCount(totalKept))} files  ${picocolors.dim(formatSize(totalBytesKept))}`,
-    );
-    console.log(
-      `  ${picocolors.bold("Removed:")}  ${picocolors.red(formatCount(totalSkipped))} files`,
-    );
+    console.log(barLine);
+    console.log(`  ${picocolors.bold("Input:")}    ${picocolors.dim(resolvedInput)}`);
+    console.log(`  ${picocolors.bold("Output:")}   ${picocolors.white(resolvedOutput)}`);
+    if (splitDocs) {
+      console.log(`  ${picocolors.dim("  ├─ code/")}  ${picocolors.white(formatCount(codeKept).padStart(8))} files  ${picocolors.dim(formatSize(codeBytes))}`);
+      console.log(`  ${picocolors.dim("  └─ docs/")}   ${picocolors.white(formatCount(docsKept).padStart(8))} files  ${picocolors.dim(formatSize(docsBytes))}`);
+    }
+    console.log(`  ${picocolors.bold("Repos:")}    ${picocolors.white(formatCount(repoCount))}`);
+    console.log(`  ${picocolors.bold("Kept:")}     ${picocolors.green(formatCount(totalKept))} files  ${picocolors.dim(formatSize(codeBytes + docsBytes))}`);
+    console.log(`  ${picocolors.bold("Removed:")}  ${picocolors.red(formatCount(totalSkipped))} files`);
     if (options.verbose) {
-      console.log(
-        `  ${picocolors.dim("  removed (extension):")} ${formatCount(skippedExtension)}`,
-      );
-      console.log(
-        `  ${picocolors.dim("  removed (generated):")} ${formatCount(skippedGenerated)}`,
-      );
+      console.log(`  ${picocolors.dim("  removed (extension):")} ${formatCount(skippedExtension)}`);
+      console.log(`  ${picocolors.dim("  removed (generated):")} ${formatCount(skippedGenerated)}`);
     }
-    console.log(
-      `  ${picocolors.bold("Kept %:")}   ${picocolors.white(pctKept)}%`,
-    );
+    console.log(`  ${picocolors.bold("Kept %:")}   ${picocolors.white(pctKept)}%`);
     if (metadataCopied > 0) {
-      console.log(
-        `  ${picocolors.dim(`Metadata: ${metadataCopied} file(s) copied`)}`,
-      );
+      console.log(`  ${picocolors.dim(`Metadata: ${metadataCopied} file(s) copied`)}`);
     }
-    console.log(picocolors.dim("═".repeat(50)));
+    console.log(barLine);
 
-    // Warning about stale metadata
     if (metadataCopied > 0) {
-      console.log(
-        `  ${picocolors.yellow("⚠")} ${picocolors.dim("manifest.json and stats.json are from the original dataset.")}`,
-      );
-      console.log(
-        `    ${picocolors.dim("Run")} ${picocolors.cyan("reposift inspect <output>")} ${picocolors.dim("for accurate filtered stats.")}`,
-      );
+      console.log(`  ${picocolors.yellow("⚠")} ${picocolors.dim("manifest.json and stats.json are from the original dataset.")}`);
+      console.log(`    ${picocolors.dim("Run")} ${picocolors.cyan("reposift inspect <output>")} ${picocolors.dim("for accurate filtered stats.")}`);
     }
 
-    // Quick tip
-    console.log(
-      `\n  ${picocolors.dim("Tip:")} Run ${picocolors.cyan("reposift inspect <output>")} to analyze the filtered dataset.\n`,
-    );
+    // Clean up empty docs/ dir if no doc files were written
+    if (splitDocs && outputDocsDir && docsKept === 0) {
+      try {
+        rmSync(outputDocsDir, { recursive: true, force: true });
+      } catch { /* best effort */ }
+    }
+
+    if (splitDocs) {
+      console.log(`\n  ${picocolors.dim("Tip:")} Run ${picocolors.cyan("reposift prepare <output> -o <traindir>")} to generate training examples.\n`);
+    } else {
+      console.log(`\n  ${picocolors.dim("Tip:")} Run ${picocolors.cyan("reposift inspect <output>")} to analyze the filtered dataset.\n`);
+    }
   } finally {
     if (cleanupTemp) cleanupTemp();
   }

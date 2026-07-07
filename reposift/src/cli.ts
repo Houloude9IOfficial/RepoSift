@@ -32,6 +32,8 @@ import pLimit from "p-limit";
 import { initCommand } from "./init.js";
 import { inspectCommand } from "./inspect.js";
 import { filterCommand } from "./filter.js";
+import { prepareCommand } from "./prepare.js";
+import { uiCommand } from "./ui.js";
 import cliProgress from "cli-progress";
 import picocolors from "picocolors";
 
@@ -65,6 +67,11 @@ program
   .version("0.1.0");
 
 program
+  .command("ui")
+  .description("Open interactive menu for all commands")
+  .action(uiCommand);
+
+program
   .command("init")
   .description("Interactively create a plan.me config file")
   .argument("[output-path]", "output path for plan.me (default: ./plan.me)")
@@ -85,9 +92,35 @@ program
   .argument("<input-path>", "path to dataset folder or .zip")
   .requiredOption("-o, --output <dir>", "output directory for filtered dataset")
   .option("--debug", "keep test files, examples, and docs (useful for debugging agent training)")
+  .option("--split-docs", "separate .md/.mdx files into a parallel docs/ directory")
   .option("-v, --verbose", "verbose debug output")
-  .action(async (inputPath: string, opts: { output: string; debug?: boolean; verbose?: boolean }) => {
-    await filterCommand(inputPath, { output: opts.output, debug: opts.debug, verbose: opts.verbose });
+  .action(async (inputPath: string, opts: { output: string; debug?: boolean; splitDocs?: boolean; verbose?: boolean }) => {
+    await filterCommand(inputPath, { output: opts.output, debug: opts.debug, splitDocs: opts.splitDocs, verbose: opts.verbose });
+  });
+
+program
+  .command("prepare")
+  .description("Generate training examples from a filtered dataset for agent training")
+  .argument("<input-path>", "path to filtered dataset (output of 'reposift filter')")
+  .requiredOption("-o, --output <dir>", "output directory for training examples")
+  .option("-m, --mode <mode>", "example type: explain | debug | all (default: all)")
+  .option("--max-examples <n>", "maximum number of examples to generate", parseInt)
+  .option("--max-file-size-kb <n>", "skip files larger than this (default: 50)", parseInt)
+  .option("-v, --verbose", "verbose debug output")
+  .action(async (inputPath: string, opts: { output: string; mode?: string; maxExamples?: number; maxFileSizeKB?: number; verbose?: boolean }) => {
+    const mode = (opts.mode ?? "all") as "explain" | "debug" | "all";
+    if (!["explain", "debug", "all"].includes(mode)) {
+      console.error(`Invalid mode "${mode}". Use explain, debug, or all.`);
+      process.exitCode = 1;
+      return;
+    }
+    await prepareCommand(inputPath, {
+      output: opts.output,
+      mode,
+      maxExamples: opts.maxExamples,
+      maxFileSizeKB: opts.maxFileSizeKB ?? 50,
+      verbose: opts.verbose,
+    });
   });
 
 program
@@ -99,7 +132,7 @@ program
   .option("--resume", "resume from last checkpoint")
   .action(runCommand);
 
-async function runCommand(
+export async function runCommand(
   planMePath: string,
   options: { output?: string; verbose?: boolean; resume?: boolean },
 ): Promise<void> {
