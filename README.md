@@ -4,6 +4,8 @@
 
 RepoSift discovers repos by search, user/org, or explicit list; filters out generated/vendor files; extracts structured training examples (function docs, type definitions, error patterns, test assertions); and exports model-agnostic datasets ready for any training framework (Hugging Face, OpenAI, MLX, LlamaFactory).
 
+*NOTE: To use `reposift ui` or any RepoSift command, you must add it to your path, or just use `npm run ui`.*
+
 ```bash
 npm install
 npm run dev -- run plan.me -o output/mydataset
