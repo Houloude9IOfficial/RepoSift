@@ -129,7 +129,25 @@ function inferLanguages(examplesByType: Record<string, number>): string[] {
 // ── README generation ──
 
 function generateReadme(meta: ExportMetadata, stats: ExportStats): string {
-  return `# ${meta.name}
+  const tags = [
+    ...meta.languages.map((l) => l.toLowerCase()),
+    "code",
+    "reposift",
+    meta.format === "messages" ? "chat" : "instruction",
+  ];
+  const yamlTags = tags.map((t) => `    - ${t}`).join("\n");
+
+  return `---
+license: ${meta.license}
+language:
+  - en
+tags:
+${yamlTags}
+task_categories:
+  - text-generation
+---
+
+# ${meta.name}
 
 ${meta.description}
 
