@@ -284,6 +284,13 @@ async function doExport(): Promise<void> {
   });
   if (p.isCancel(datasetName)) return;
 
+  const hfLicense = await p.text({
+    message: "License identifier (other, mit, apache-2.0, etc.)",
+    placeholder: "other",
+    defaultValue: "other",
+  });
+  if (p.isCancel(hfLicense)) return;
+
   const verbose = await p.confirm({
     message: "Enable verbose output?",
     initialValue: false,
@@ -294,6 +301,7 @@ async function doExport(): Promise<void> {
     output: outputDir as string,
     format: (format as string) as "instruction" | "messages",
     name: datasetName as string,
+    license: hfLicense as string,
     verbose: verbose as boolean,
   });
 }

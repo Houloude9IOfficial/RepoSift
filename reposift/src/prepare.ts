@@ -61,15 +61,45 @@ function extractFunctions(code: string): Array<{ doc: string; signature: string 
 }
 
 /**
- * Extract type/interface definitions.
+ * Extract type/interface definitions and generate a description.
  */
-const TYPE_RE = /(?:export\s+)?(?:type|interface)\s+(\w+)(?:\s*<[\s\S]*?>)?(?:\s+extends\s+[\w.]+(?:\s*,\s*[\w.]+)*)?\s*\{[\s\S]*?\}\s*[;]?/g;
+const TYPE_RE = /(?:export\s+)?(?:type|interface)\s+(\w+)(?:\s*<[\s\S]*?>)?(?:\s+extends\s+([\w.\s,]+))?\s*\{([\s\S]*?)\}\s*[;]?/g;
 
-function extractTypeDefs(code: string): Array<{ name: string; definition: string }> {
-  const results: Array<{ name: string; definition: string }> = [];
+function extractTypeDefs(code: string): Array<{ name: string; definition: string; description: string }> {
+  const results: Array<{ name: string; definition: string; description: string }> = [];
   let match: RegExpExecArray | null;
   while ((match = TYPE_RE.exec(code)) !== null) {
-    results.push({ name: match[1], definition: match[0].trim() });
+    const name = match[1];
+    const extendsClause = match[2]?.trim();
+    const body = match[3].trim();
+    const definition = match[0].trim();
+
+    // Count properties and extract their names/types
+    // Support ;, ,, or newline as separators
+    const lines = body.split(/[;,\n]/).map((l) => l.trim()).filter(Boolean);
+    const props: string[] = [];
+    for (const line of lines) {
+      // Match `name?: Type` or `name: Type` — skip comments and index signatures
+      if (line.startsWith("//") || line.startsWith("/*") || line.startsWith("[")) continue;
+      const propMatch = line.match(/^\s*(\w+)\s*(\?)?\s*:\s*([^\s;=,]+)/);
+      if (propMatch) {
+        const optional = propMatch[2] ? "?" : "";
+        props.push(`${propMatch[1]}${optional}: ${propMatch[3]}`);
+      }
+    }
+
+    // Build description
+    const parts: string[] = [];
+    const kind = definition.startsWith("export interface") || definition.startsWith("interface") ? "interface" : "type alias";
+    parts.push(`The \`${name}\` ${kind} defines ${props.length > 0 ? `${props.length} propert${props.length === 1 ? "y" : "ies"}` : "no properties"}.`);
+    if (props.length > 0 && props.length <= 8) {
+      parts.push(`Properties: ${props.join(", ")}.`);
+    }
+    if (extendsClause) {
+      parts.push(`The \`${name}\` extends \`${extendsClause}\`.`);
+    }
+
+    results.push({ name, definition, description: parts.join(" ") });
   }
   return results;
 }
@@ -195,7 +225,7 @@ function generateExplainExamples(ctx: GeneratorContext): TrainingExample[] {
       file: filePath,
       instruction: "Explain this TypeScript type definition",
       input: t.definition,
-      output: "",
+      output: t.description,
     });
   }
 
@@ -210,6 +240,8 @@ function generateDebugExamples(ctx: GeneratorContext): TrainingExample[] {
   if (content.includes("@ts-expect-error") || content.includes("@ts-ignore")) {
     const errors = extractErrorContexts(content, filePath);
     for (const err of errors) {
+      // Generate a description based on the error context
+      const output = generateErrorDescription(err.errorMsg, err.context);
       examples.push({
         id: nextId("tserr"),
         type: "error_context",
@@ -217,7 +249,7 @@ function generateDebugExamples(ctx: GeneratorContext): TrainingExample[] {
         file: filePath,
         instruction: "Debug this TypeScript error",
         input: err.context,
-        output: `// Error: ${err.errorMsg}\n// Solution: (to be filled)`,
+        output,
       });
     }
   }
@@ -226,6 +258,7 @@ function generateDebugExamples(ctx: GeneratorContext): TrainingExample[] {
   if (isTestFilePath(filePath) && (content.includes("describe") || content.includes("it(") || content.includes("test("))) {
     const blocks = extractTestBlocks(content);
     for (const block of blocks.slice(0, 5)) {
+      const testDescription = extractTestDescription(block);
       examples.push({
         id: nextId("test"),
         type: "test_assertion",
@@ -233,7 +266,7 @@ function generateDebugExamples(ctx: GeneratorContext): TrainingExample[] {
         file: filePath,
         instruction: "Analyze this test case and explain what it validates",
         input: block,
-        output: "",
+        output: `This test validates that "${testDescription}". It uses expectations to verify the behavior is correct.`,
       });
     }
   }
@@ -242,6 +275,7 @@ function generateDebugExamples(ctx: GeneratorContext): TrainingExample[] {
   if (content.includes("catch") || content.includes("throw")) {
     const patterns = extractErrorPatterns(content);
     for (const p of patterns.slice(0, 3)) {
+      const output = generateErrorHandlingDescription(p);
       examples.push({
         id: nextId("error"),
         type: "error_handling",
@@ -249,7 +283,7 @@ function generateDebugExamples(ctx: GeneratorContext): TrainingExample[] {
         file: filePath,
         instruction: "Explain how this code handles errors",
         input: p,
-        output: "",
+        output,
       });
     }
   }
@@ -260,6 +294,26 @@ function generateDebugExamples(ctx: GeneratorContext): TrainingExample[] {
 function generateFileContextExamples(ctx: GeneratorContext): TrainingExample[] {
   const { repo, filePath, content } = ctx;
 
+  // Extract file-level statistics for the description
+  const importCount = (content.match(/^(?:import\s+|const\s+.*?=\s*require\s*\()/gm) || []).length;
+  const exportCount = (content.match(/^(?:export\s+(?:default\s+)?(?:function|class|const|let|var|interface|type|enum|async\s+function))/gm) || []).length;
+  const funcCount = (content.match(/\b(?:async\s+)?function\s+\w+\s*\(/g) || []).length;
+  const classCount = (content.match(/\bclass\s+\w+/g) || []).length;
+  const lines = content.split("\n").length;
+
+  const parts: string[] = [];
+  parts.push(`This ${ctx.ext === ".ts" || ctx.ext === ".tsx" ? "TypeScript" : "JavaScript"} file (${lines} lines) `);
+  if (funcCount > 0 || classCount > 0 || exportCount > 0 || importCount > 0) {
+    const details: string[] = [];
+    if (importCount > 0) details.push(`${importCount} import${importCount !== 1 ? "s" : ""}`);
+    if (exportCount > 0) details.push(`${exportCount} export${exportCount !== 1 ? "s" : ""}`);
+    if (funcCount > 0) details.push(`${funcCount} function${funcCount !== 1 ? "s" : ""}`);
+    if (classCount > 0) details.push(`${classCount} class${classCount !== 1 ? "es" : ""}`);
+    parts.push(`contains ${details.join(", ")}.`);
+  } else {
+    parts.push("contains module-level code and definitions.");
+  }
+
   return [
     {
       id: nextId("file"),
@@ -268,7 +322,7 @@ function generateFileContextExamples(ctx: GeneratorContext): TrainingExample[] {
       file: filePath,
       instruction: "Analyze this code and describe its purpose, structure, and key patterns",
       input: content.length > 4000 ? content.slice(0, 4000) + "\n// ... (truncated)" : content,
-      output: "",
+      output: parts.join(""),
     },
   ];
 }
@@ -531,6 +585,7 @@ export async function prepareCommand(
           }
           if (content.length < 50) return;
 
+          const docSummary = extractDocSummary(content);
           const ex: TrainingExample = {
             id: nextId("doc"),
             type: "doc_context",
@@ -538,7 +593,7 @@ export async function prepareCommand(
             file: relPath,
             instruction: "Explain what this documentation describes and how it helps developers",
             input: content.length > 3000 ? content.slice(0, 3000) + "\n\n... (truncated)" : content,
-            output: "",
+            output: docSummary,
           };
 
           const jsonLine = JSON.stringify(ex) + "\n";
@@ -592,6 +647,123 @@ export async function prepareCommand(
   console.log(`    ${picocolors.cyan("examples.jsonl")}      — all examples with metadata`);
   console.log(`    ${picocolors.cyan("examples_summary.json")} — generation summary`);
   console.log("");
+}
+
+// ── Description generators ──
+
+function generateErrorDescription(errorMsg: string, context: string): string {
+  const lines = context.split("\n").filter((l) => l.trim().length > 0);
+  const firstLine = lines[0]?.trim() || "";
+  const lowerMsg = errorMsg.toLowerCase();
+
+  // Detect the kind of error context — ordered by specificity
+  const isUndefinedError = lowerMsg.includes("possibly 'undefined'") || lowerMsg.includes("possibly undefined");
+  const isTypeError = lowerMsg.includes("assignable") || /type .* not assignable/i.test(errorMsg);
+  const isPropertyError = (lowerMsg.includes("property") && lowerMsg.includes("not exist")) || lowerMsg.includes("has no");
+
+  const parts: string[] = [];
+  parts.push(`The code contains a TypeScript error suppressed with `);
+  parts.push(`@ts-expect-error. The error message indicates: "${errorMsg}".`);
+
+  if (isTypeError) {
+    parts.push(` This is a type compatibility issue where a value's type does not match the expected type.`);
+    if (firstLine) {
+      parts.push(` The problematic code is: \`${firstLine}\``);
+    }
+    parts.push(` The fix would be to ensure the types are compatible, use a type assertion, or add proper type guards.`);
+  } else if (isPropertyError) {
+    parts.push(` This occurs when trying to access a property that does not exist on the type.`);
+    if (firstLine) {
+      parts.push(` The expression \`${firstLine}\` accesses a member that may not be present.`);
+    }
+    parts.push(` Checking for the property's existence or using optional chaining (?.) would resolve this.`);
+  } else if (isUndefinedError) {
+    parts.push(` This happens when a value that could be \`undefined\` is used without a null check.`);
+    if (firstLine) {
+      parts.push(` The value in \`${firstLine}\` may be undefined at runtime.`);
+    }
+    parts.push(` Adding a defensive check or default value would fix this.`);
+  } else {
+    parts.push(` This is a general type safety issue that TypeScript detects at compile time.`);
+    parts.push(` Reviewing the types involved and ensuring proper type annotations would resolve it.`);
+  }
+
+  return parts.join("");
+}
+
+function extractTestDescription(block: string): string {
+  // Extract the description from describe/it/test("description", ...)
+  const match = block.match(/(?:describe|it|test)\s*\(\s*["'`]([^"'`]+)["'`]/);
+  return match ? match[1].trim() : "test case";
+}
+
+function generateErrorHandlingDescription(pattern: string): string {
+  const isTryCatch = pattern.includes("try") && pattern.includes("catch");
+  const isThrow = pattern.includes("throw");
+
+  // Extract error type from throw new SomeError(...)
+  const errorTypeMatch = pattern.match(/throw\s+(?:new\s+)?(\w+(?:Error|Exception))/);
+  const catchTypeMatch = pattern.match(/catch\s*\(\s*(\w+)(?:\s*:\s*(\w+))?/);
+
+  const parts: string[] = [];
+
+  if (isTryCatch) {
+    parts.push("This code uses a try/catch block to handle errors gracefully.");
+    if (catchTypeMatch) {
+      const errVar = catchTypeMatch[1];
+      const errType = catchTypeMatch[2];
+      if (errType) {
+        parts.push(` It catches \`${errType}\` exceptions as \`${errVar}\`.`);
+      } else {
+        parts.push(` It catches all exceptions as \`${errVar}\`.`);
+      }
+    } else {
+      parts.push(" It catches all exceptions without filtering by type.");
+    }
+    parts.push(" The catch block can log errors, display user-friendly messages, or attempt recovery.");
+  }
+
+  if (isThrow) {
+    if (errorTypeMatch) {
+      parts.push(` It throws \`${errorTypeMatch[1]}\` to signal error conditions.`);
+    } else {
+      parts.push(" It throws errors to signal exceptional conditions.");
+    }
+    parts.push(" Throwing errors allows calling code to handle failures appropriately.");
+  }
+
+  if (parts.length === 0) {
+    parts.push("This code implements error handling logic to manage exceptional conditions.");
+  }
+
+  return parts.join("");
+}
+
+function extractDocSummary(content: string): string {
+  // Try to extract a meaningful summary from the doc
+  // First check for a heading
+  const headingMatch = content.match(/^#\s+(.+)/m);
+  if (headingMatch) {
+    return `This documentation covers "${headingMatch[1].trim()}". It provides information about usage, configuration, and API details relevant to developers working with this code.`;
+  }
+
+  // Try the first paragraph
+  const paraMatch = content.match(/^(?:[A-Z][^\n]{10,}?)(?:\.|\n)/m);
+  if (paraMatch) {
+    const firstSentence = paraMatch[0].replace(/\n/g, " ").trim();
+    if (firstSentence.length > 20 && firstSentence.length < 300) {
+      return `Summary: ${firstSentence}`;
+    }
+  }
+
+  // Fallback: use first non-empty line
+  const firstLine = content.split("\n").find((l) => l.trim().length > 10);
+  if (firstLine) {
+    const trimmed = firstLine.trim();
+    return `This document describes: ${trimmed}`;
+  }
+
+  return "This document provides reference information for developers.";
 }
 
 function formatCount(n: number): string {

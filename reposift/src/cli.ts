@@ -139,8 +139,9 @@ program
   .requiredOption("-o, --output <dir>", "output directory for the exported dataset")
   .option("-f, --format <format>", "output format: instruction | messages (default: instruction)")
   .option("--name <name>", "dataset name for metadata (default: reposift-dataset)")
+  .option("--license <license>", "HF-compatible license: mit, apache-2.0, other, etc. (default: other)")
   .option("-v, --verbose", "verbose debug output")
-  .action(async (inputPath: string, opts: { output: string; format?: string; name?: string; verbose?: boolean }) => {
+  .action(async (inputPath: string, opts: { output: string; format?: string; name?: string; license?: string; verbose?: boolean }) => {
     const format = (opts.format ?? "instruction") as "instruction" | "messages";
     if (!["instruction", "messages"].includes(format)) {
       console.error(`Invalid format "${format}". Use instruction or messages.`);
@@ -151,6 +152,7 @@ program
       output: opts.output,
       format,
       name: opts.name,
+      license: opts.license,
       verbose: opts.verbose,
     });
   });

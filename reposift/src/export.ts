@@ -20,6 +20,7 @@ export interface ExportOptions {
   output: string;
   format: ExportFormat;
   name?: string;
+  license?: string;
   verbose?: boolean;
 }
 
@@ -361,7 +362,7 @@ export async function exportCommand(
     format,
     languages: inferredLanguages,
     sourceRepos,
-    license: "mixed",
+    license: options.license ?? "other",
     created,
     generatedBy: process.env.npm_package_name || "RepoSift",
     version: process.env.npm_package_version || "0.1.0",
